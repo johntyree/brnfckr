@@ -110,9 +110,10 @@ parseTerm = Parser char'
 parseBracket :: Char -> Char -> Parser String
 parseBracket open close = Parser go
   where
-    go (o:rest) | o == open = brkt (1 :: Int) "" rest
-                | o == close = Left $ UnbalancedBracket (o:rest)
-                | otherwise = Left $ ParseFailure "Not bracketed"
+    go xl | null xl = Left $ ParseFailure "Not bracketed"
+          | head xl == open = brkt (1 :: Int) "" (tail xl)
+          | head xl == close = Left $ UnbalancedBracket xl
+          | otherwise = Left $ ParseFailure "Not bracketed"
     brkt _ inner [] = Left $ UnbalancedBracket (open:reverse inner)
     brkt i inner (x:xs)
       | x == open = brkt (i+1) (x:inner) xs
