@@ -2,7 +2,6 @@
 
 module Brnfckr.Eval where
 
-
 import Control.Monad
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State.Strict
@@ -34,7 +33,7 @@ instance Show World where
                ]
 
 getMem :: BrainFuck Ptr
-getMem = lift $ mem <$> get
+getMem = lift $ fmap mem get
 
 setMem :: Ptr -> BrainFuck ()
 setMem p = lift $ modify $ \w -> w { mem = p }
@@ -142,7 +141,7 @@ eval = mapM_ f
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
 runBrainFuck source stream =
   case parseBrainFuck source of
-    Right terms -> render <$> run (eval (compress terms))
+    Right terms -> fmap render (run (eval (compress terms)))
     Left e -> parseFail e
   where
     parseFail msg = ((Left msg, world { mem = Ptr [] 0 [] }), "")

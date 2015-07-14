@@ -22,7 +22,6 @@ main :: IO ()
 main = do
   bottlesBF <- getDataFileName "programs/bottles.bf" >>= readFile
   bottlesOut <- getDataFileName "programs/bottles.out" >>= readFile
-  getDataFileName "programs/bottles.out" >>= putStrLn
   hspec $ do
     describe "basic programs" $ do
         it "output until inclusive 0" $ let s = map (chr . fromIntegral) $ [1 :: Word8 .. 255] ++ [0]

@@ -8,7 +8,7 @@ import Brnfckr.Eval (runBrainFuck)
 
 main :: IO ()
 main = do
-  fname <- head <$> getArgs
+  fname <- fmap head getArgs
   source <- readFile fname
   stream <- getContents
   case runBrainFuck source stream of
