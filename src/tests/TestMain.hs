@@ -23,6 +23,19 @@ main = do
   bottlesBF <- getDataFileName "programs/bottles.bf" >>= readFile
   bottlesOut <- getDataFileName "programs/bottles.out" >>= readFile
   hspec $ do
+    describe "Parsing" $ do
+        it "unbalanced parens0" $ parseBrainFuck "[" `shouldBe` Left (UnbalancedBracket "[")
+        it "unbalanced parens0" $ parseBrainFuck "]" `shouldBe` Left (UnbalancedBracket "]")
+        it "unbalanced parens1" $ parseBrainFuck "+++++[>+++++++>++<<-]>.>.[" `shouldBe` Left (UnbalancedBracket "[")
+
+    describe "Parsing errors bubble up while running" $ do
+        it "unbalanced parens0" $ (fst . fst) (runBrainFuck "[" "") `shouldBe` Left (UnbalancedBracket "[")
+        it "unbalanced parens0" $ (fst . fst) (runBrainFuck "]" "") `shouldBe` Left (UnbalancedBracket "]")
+        it "unbalanced parens1" $ (fst . fst) (runBrainFuck "+++++[>+++++++>++<<-]>.>.[" "") `shouldBe` Left (UnbalancedBracket "[")
+
+    describe "error handling" $
+        it "insufficient input" $ executeString "," "" `shouldBe` Nothing
+
     describe "basic programs" $ do
         it "output until inclusive 0" $ let s = map (chr . fromIntegral) $ [1 :: Word8 .. 255] ++ [0]
                                         in executeString "+[,.]" s `shouldBe` Just s
@@ -40,12 +53,6 @@ main = do
         it "Hello World!" $ executeString helloWorldBF "" `shouldBe` Just "Hello World!"
         it "Numbers" $ executeString numbersBF [chr 10] `shouldBe` Just "1, 1, 2, 3, 5, 8, 13, 21, 34, 55"
         it "Bottles of beer" $ executeString bottlesBF "" `shouldBe` Just bottlesOut
-
-    describe "error handling" $ do
-        it "insufficient input" $ executeString "," "" `shouldBe` Nothing
-        it "unbalanced parens0" $ (fst . fst) (runBrainFuck "[" "") `shouldBe` Left (UnbalancedBracket "[")
-        it "unbalanced parens0" $ (fst . fst) (runBrainFuck "]" "") `shouldBe` Left (UnbalancedBracket "]")
-        it "unbalanced parens1" $ (fst . fst) (runBrainFuck "+++++[>+++++++>++<<-]>.>.[" "") `shouldBe` Left (UnbalancedBracket "[")
 
   where
     helloWorldBF = "++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+."
