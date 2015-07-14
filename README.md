@@ -1,5 +1,6 @@
 # brnfckr
 An optimizing brainfuck toolchain.
+
 [![Build Status](https://travis-ci.org/johntyree/brnfckr.svg)](https://travis-ci.org/johntyree/brnfckr)
 
 
