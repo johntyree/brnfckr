@@ -123,5 +123,3 @@ parseBracket open close = Parser go
           0 -> Left $ UnbalancedBracket (reverse inner ++ (x:xs))
           _ -> brkt (i-1) (x:inner) xs
       | otherwise = brkt i (x:inner) xs
-
-
