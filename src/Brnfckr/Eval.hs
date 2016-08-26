@@ -15,10 +15,17 @@ import Brnfckr.Parse
 
 
 type BrainFuck a = ExceptT BrainFuckError (StateT World (Writer Output)) a
-data World = W { mem :: Ptr, dataInput :: Input }
-data Ptr = Ptr [Word8] Word8 [Word8]
+data World = W { mem :: !Ptr, dataInput :: Input }
+data Ptr = Ptr [Word8] !Word8 [Word8]
 type Input = [Word8]
 type Output = [Word8]
+
+
+defaultPtr :: Ptr
+defaultPtr = Ptr (repeat 0) 0 (repeat 0)
+
+defaultWorld :: World
+defaultWorld = W { mem = defaultPtr, dataInput = [] }
 
 
 instance Show World where
@@ -138,23 +145,29 @@ eval = mapM_ f
       f ValInput = valInput
       f ValOutput = valOutput
 
-runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
-runBrainFuck source stream =
-  case parseBrainFuck source of
-    Right terms -> fmap render (run (eval (compress terms)))
-    Left e -> parseFail e
+optimizeBrainFuck :: Either BrainFuckError [Term] -> Either BrainFuckError [Term]
+optimizeBrainFuck = fmap compress
+
+runBrainFuck' :: Either BrainFuckError [Term] -> String
+              -> ((Either BrainFuckError (), World), Output)
+runBrainFuck' parseResult stream =
+  case parseResult of
+    Right ast -> run (eval ast)
+    Left msg -> ((Left msg, emptyWorld), [])
   where
-    parseFail msg = ((Left msg, world { mem = Ptr [] 0 [] }), "")
-    run = runWriter . flip runStateT world . runExceptT
-    world = W { mem = initPtr, dataInput = inputBytes }
-    initPtr = Ptr (repeat 0) 0 (repeat 0)
-    toChars = map (chr . fromIntegral)
     inputBytes = map (fromIntegral . ord) stream
-    render = toChars
+    run = runWriter . flip runStateT world . runExceptT
+    world = defaultWorld { dataInput = inputBytes }
+    emptyWorld = world { mem = Ptr [] 0 [] }
+
+runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
+runBrainFuck source stream = render output
+  where
+    output = runBrainFuck' (compress <$> parseBrainFuck source) stream
+    toChars = map (chr . fromIntegral)
+    render = fmap toChars
 
 executeString :: String -> String -> Maybe String
 executeString source stream = case runBrainFuck source stream of
   ((Left _, _), _) -> Nothing
   ((_, _), s) -> Just s
-
-

@@ -1,28 +1,32 @@
-
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Brnfckr.Parse where
 
 
+import GHC.Generics (Generic)
 import Control.Applicative
+import Control.DeepSeq
 import Data.Word
 
 
 data BrainFuckError = UnbalancedBracket String
                     | ParseFailure String
                     | InsufficientInput
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic, NFData)
 
-data Term = ValIncr Word8
-          | ValDecr Word8
-          | ValSet  Word8
-          | PtrIncr Int
-          | PtrDecr Int
+data Term = ValIncr !Word8
+          | ValDecr !Word8
+          | ValSet  !Word8
+          | PtrIncr !Int
+          | PtrDecr !Int
           | ScanIncr
           | ScanDecr
           | Loop [Term]
           | ValInput
           | ValOutput
-  deriving (Eq, Show)
+  deriving (Eq, Show, Generic, NFData)
 
 data Parser a = Parser { runParser :: String -> Either BrainFuckError (String, a) }
 
@@ -112,7 +116,7 @@ parseBracket open close = Parser go
   where
     go (o:rest) | o == open = brkt (1 :: Int) "" rest
                 | o == close = Left $ UnbalancedBracket (o:rest)
-                | otherwise = Left $ ParseFailure "Not bracketed"
+    go _ = Left $ ParseFailure "Not bracketed"
     brkt _ inner [] = Left $ UnbalancedBracket (open:reverse inner)
     brkt i inner (x:xs)
       | x == open = brkt (i+1) (x:inner) xs
