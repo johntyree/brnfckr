@@ -58,6 +58,7 @@ test-suite test
     Ghc-Options:       -Wall -threaded
     build-depends:     base
                      , brnfckr
+                     , deepseq
                      , transformers
                      , mtl
                      , hspec
