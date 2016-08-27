@@ -29,6 +29,7 @@ executable brnfckr
                      , hspec
                      , deepseq
                      , QuickCheck
+                     , vector
                      , brnfckr
   other-modules:       Brnfckr.Eval
 
@@ -47,6 +48,7 @@ library
                      , transformers
                      , deepseq
                      , mtl
+                     , vector
                      , hspec
                      , QuickCheck
 
@@ -62,6 +64,7 @@ test-suite test
                      , transformers
                      , mtl
                      , hspec
+                     , vector
                      , QuickCheck
     other-modules:     Paths_brnfckr
                      , Brnfckr.Parse
@@ -77,6 +80,7 @@ Benchmark parse-benchmarks
                      , brnfckr
                      , criterion
                      , directory
+                     , vector
                      , filepath
                      , deepseq
                      , mtl

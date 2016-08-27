@@ -3,34 +3,44 @@
 module Brnfckr.Eval where
 
 import Control.Monad
+import Control.Monad.ST
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Writer.Strict
 import Data.Char
 import Data.Word
-import Data.List
 import Data.Maybe
+import qualified Data.Vector.Unboxed as U
+import qualified Data.Vector.Generic as V
+import qualified Data.Vector.Generic.Mutable as VM
+
 
 import Brnfckr.Parse
 
 
 type BrainFuck a = ExceptT BrainFuckError (StateT World (Writer Output)) a
 data World = W { mem :: !Ptr, dataInput :: Input }
-data Ptr = Ptr [Word8] !Word8 [Word8]
+data Ptr = Ptr !Int (U.Vector Word8)
 type Input = [Word8]
 type Output = [Word8]
 
 
+memSize :: Int
+memSize = 30000
+
 defaultPtr :: Ptr
-defaultPtr = Ptr (repeat 0) 0 (repeat 0)
+defaultPtr = Ptr 0 (V.replicate memSize 0)
 
 defaultWorld :: World
 defaultWorld = W { mem = defaultPtr, dataInput = [] }
 
 
 instance Show World where
-  show (W (Ptr ls p rs) i) =
-    let left = unwords . map show . reverse $ take 3 ls
+  show (W (Ptr pc ram) i) =
+    let ls = V.toList $ V.take pc ram
+        rs = V.toList $ V.drop (pc + 1) ram
+        p = ram V.! pc
+        left = unwords . map show . reverse $ take 3 ls
         right = unwords . map show $ take 3 rs
         brain = unwords ["[", left, "", show p, "", right, "]"]
     in unwords [ "World {"
@@ -48,58 +58,73 @@ setMem p = lift $ modify $ \w -> w { mem = p }
 ptrIncr, ptrDecr :: Int -> BrainFuck ()
 ptrIncr 0 = return ()
 ptrIncr i = do
-  Ptr ls p rs <- getMem
-  let (shifted, p':rs') = splitAt (i-1) rs
-      ls' = reverse shifted ++ (p : ls)
-  setMem $ Ptr ls' p' rs'
-
-ptrDecr 0 = return ()
-ptrDecr i = do
-  Ptr ls p rs <- getMem
-  let (shifted, p':ls') = splitAt (i-1) ls
-      rs' = reverse shifted ++ (p : rs)
-  setMem $ Ptr ls' p' rs'
+  Ptr pc ram <- getMem
+  setMem $ Ptr (pc + i) ram
+ptrDecr i = ptrIncr (-i)
 
 scanIncr, scanDecr :: BrainFuck ()
 scanIncr = do
-  Ptr _ p rs <- getMem
-  let idx = fromJust (elemIndex 0 (p:rs))
+  Ptr pc ram <- getMem
+  let prs = V.drop pc ram
+      idx = fromJust (V.elemIndex 0 prs)
   when (idx > 0) $ ptrIncr idx
 scanDecr = do
-  Ptr ls p _ <- getMem
-  let idx = fromJust (elemIndex 0 (p:ls))
+  Ptr pc ram <- getMem
+  let pls = V.reverse . V.take (pc + 1) $ ram
+      idx = fromJust (V.elemIndex 0 pls)
   when (idx > 0) $ ptrDecr idx
 
 valIncr, valDecr :: Word8 -> BrainFuck ()
 valIncr i = do
-  Ptr ls p rs <- getMem
-  setMem $ Ptr ls (p + i) rs
+  Ptr pc ram <- getMem
+  let newVal = (ram V.! pc) + i
+      newRam = runST $ do
+        v <- V.thaw ram
+        VM.write v pc newVal
+        V.freeze v
+  setMem $ Ptr pc newRam
 valDecr i = do
-  Ptr ls p rs <- getMem
-  setMem $ Ptr ls (p - i) rs
+  Ptr pc ram <- getMem
+  let newVal = (ram V.! pc) - i
+      newRam = runST $ do
+        v <- V.thaw ram
+        VM.write v pc newVal
+        V.freeze v
+  setMem $ Ptr pc newRam
 
 valOutput :: BrainFuck ()
 valOutput = do
-  Ptr _ p _ <- getMem
-  tell [p]
+  Ptr pc ram <- getMem
+  tell [ram V.! pc]
 
 valInput :: BrainFuck ()
 valInput = do
-  W { mem = Ptr ls _ rs, dataInput = i } <- lift get
-  case i of
-    (byte:rest) -> lift $ put W { mem = Ptr ls byte rs, dataInput = rest }
+  W { mem = Ptr pc ram, dataInput = input } <- lift get
+  case input of
+    (byte:rest) -> do
+          let newRam = runST $ do
+                v <- V.thaw ram
+                VM.write v pc byte
+                V.freeze v
+          lift $ put W { mem = Ptr pc newRam, dataInput = rest }
     _ -> throwE InsufficientInput
 
 valSet :: Word8 -> BrainFuck ()
-valSet i = lift $ modify $ \w@(W {mem = Ptr l _ r}) ->
-  w { mem = Ptr l i r }
+valSet byte = do
+  Ptr pc ram <- getMem
+  let newRam = runST $ do
+        v <- V.thaw ram
+        VM.write v pc byte
+        V.freeze v
+  setMem $ Ptr pc newRam
 
 runLoop :: [Term] -> BrainFuck ()
 runLoop terms =
   let prog = eval terms
       go p = do
-        Ptr _ b _ <- getMem
-        when (b /= 0) (p >> go p)
+        Ptr pc ram <- getMem
+        let byte = ram V.! pc
+        when (byte /= 0) (p >> go p)
   in prog `seq` go prog
 
 compress :: [Term] -> [Term]
@@ -158,7 +183,7 @@ runBrainFuck' parseResult stream =
     inputBytes = map (fromIntegral . ord) stream
     run = runWriter . flip runStateT world . runExceptT
     world = defaultWorld { dataInput = inputBytes }
-    emptyWorld = world { mem = Ptr [] 0 [] }
+    emptyWorld = world { mem = Ptr 0 U.empty }
 
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
 runBrainFuck source stream = render output
