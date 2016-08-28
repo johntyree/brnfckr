@@ -18,21 +18,23 @@ import Brnfckr.Parse
 
 type BrainFuck a = ExceptT BrainFuckError (StateT World (Writer Output)) a
 data World = W { mem :: !Ptr, dataInput :: Input }
-data Ptr = Ptr (S.Seq Word8) !Word8 (S.Seq Word8)
+data Ptr = Ptr !Int (S.Seq Word8)
 type Input = [Word8]
 type Output = [Word8]
 
 
 defaultPtr :: Ptr
-defaultPtr = Ptr S.empty 0 (S.replicate 30000 0)
+defaultPtr = Ptr 0 (S.replicate 30000 0)
 
 defaultWorld :: World
 defaultWorld = W { mem = defaultPtr, dataInput = [] }
 
 
 instance Show World where
-  show (W (Ptr ls p rs) i) =
-    let left = unwords . map show . reverse $ take 3 $ toList ls
+  show (W (Ptr cur ram) i) =
+    let (ls, centerRight) = S.splitAt cur ram
+        p S.:< rs = S.viewl centerRight
+        left = unwords . map show . reverse $ take 3 $ toList ls
         right = unwords . map show $ take 3 $ toList rs
         brain = unwords ["[", left, "", show p, "", right, "]"]
     in unwords [ "World {"
@@ -50,59 +52,54 @@ setMem p = lift $ modify $ \w -> w { mem = p }
 ptrIncr, ptrDecr :: Int -> BrainFuck ()
 ptrIncr 0 = return ()
 ptrIncr i = do
-  Ptr ls p rs <- getMem
-  let (nearRight, right) = S.splitAt i rs
-      left S.:> center = S.viewr $ (ls S.|> p) S.>< nearRight
-  setMem $ Ptr left center right
-
-ptrDecr 0 = return ()
-ptrDecr i = do
-  Ptr ls p rs <- getMem
-  let len = S.length ls
-      idx = len - i
-      (left, nearLeft) = S.splitAt idx ls
-      center S.:< right = S.viewl $ nearLeft S.>< (p S.<| rs)
-  setMem $ Ptr left center right
+  Ptr cur rs <- getMem
+  setMem $ Ptr (cur + i) rs
+ptrDecr i = ptrIncr (-i)
 
 scanIncr, scanDecr :: BrainFuck ()
 scanIncr = do
-  Ptr _ p rs <- getMem
-  let Just idx = S.elemIndexL 0 (p S.<| rs)
+  Ptr cur ram <- getMem
+  let centerRight = S.drop cur ram
+      Just idx = S.elemIndexL 0 centerRight
   when (idx > 0) $ ptrIncr idx
 scanDecr = do
-  Ptr ls p _ <- getMem
-  let Just idx = (S.elemIndexR 0 (ls S.|> p))
+  Ptr cur ram <- getMem
+  let leftCenter = S.take (cur + 1) ram
+      Just idx = S.elemIndexR 0 leftCenter
   when (idx > 0) $ ptrDecr idx
 
 valIncr, valDecr :: Word8 -> BrainFuck ()
 valIncr i = do
-  Ptr ls p rs <- getMem
-  setMem $ Ptr ls (p + i) rs
+  Ptr cur ram <- getMem
+  setMem $ Ptr cur (S.adjust (+ i) cur ram)
 valDecr i = do
-  Ptr ls p rs <- getMem
-  setMem $ Ptr ls (p - i) rs
+  Ptr cur ram <- getMem
+  setMem $ Ptr cur (S.adjust (subtract i) cur ram)
 
 valOutput :: BrainFuck ()
 valOutput = do
-  Ptr _ p _ <- getMem
-  tell [p]
+  Ptr cur ram <- getMem
+  tell [S.index ram cur]
 
 valInput :: BrainFuck ()
 valInput = do
-  W { mem = Ptr ls _ rs, dataInput = i } <- lift get
+  W { mem = Ptr cur r, dataInput = i } <- lift get
   case i of
-    (byte:rest) -> lift $ put W { mem = Ptr ls byte rs, dataInput = rest }
+    (byte:rest) -> let ram = S.update cur byte r
+                    in lift $ put W { mem = Ptr cur ram, dataInput = rest }
     _ -> throwE InsufficientInput
 
 valSet :: Word8 -> BrainFuck ()
-valSet i = lift $ modify $ \w@(W {mem = Ptr l _ r}) ->
-  w { mem = Ptr l i r }
+valSet byte = lift $ modify $ \w@W { mem = Ptr cur r } ->
+  let ram = S.update cur byte r
+   in w { mem = Ptr cur ram }
 
 runLoop :: [Term] -> BrainFuck ()
 runLoop terms =
   let prog = eval terms
       go p = do
-        Ptr _ b _ <- getMem
+        Ptr cur ram <- getMem
+        let b = S.index ram cur
         when (b /= 0) (p >> go p)
   in prog `seq` go prog
 
@@ -162,7 +159,7 @@ runBrainFuck' parseResult stream =
     inputBytes = map (fromIntegral . ord) stream
     run = runWriter . flip runStateT world . runExceptT
     world = defaultWorld { dataInput = inputBytes }
-    emptyWorld = world { mem = Ptr S.empty 0 S.empty }
+    emptyWorld = world { mem = Ptr 0 S.empty }
 
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
 runBrainFuck source stream = render output

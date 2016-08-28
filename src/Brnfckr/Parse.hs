@@ -16,6 +16,7 @@ data BrainFuckError = UnbalancedBracket String
                     | InsufficientInput
   deriving (Show, Eq, Generic, NFData)
 
+-- TODO: Incr/Decr should be signed
 data Term = ValIncr !Word8
           | ValDecr !Word8
           | ValSet  !Word8
