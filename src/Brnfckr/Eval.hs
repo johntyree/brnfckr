@@ -3,9 +3,11 @@
 module Brnfckr.Eval where
 
 import Control.Monad
+import Data.Foldable
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Writer.Strict
+import qualified Data.Sequence as S
 import Data.Char
 import Data.Word
 import Data.List
@@ -16,13 +18,13 @@ import Brnfckr.Parse
 
 type BrainFuck a = ExceptT BrainFuckError (StateT World (Writer Output)) a
 data World = W { mem :: !Ptr, dataInput :: Input }
-data Ptr = Ptr [Word8] !Word8 [Word8]
+data Ptr = Ptr (S.Seq Word8) !Word8 (S.Seq Word8)
 type Input = [Word8]
 type Output = [Word8]
 
 
 defaultPtr :: Ptr
-defaultPtr = Ptr (repeat 0) 0 (repeat 0)
+defaultPtr = Ptr S.empty 0 (S.replicate 30000 0)
 
 defaultWorld :: World
 defaultWorld = W { mem = defaultPtr, dataInput = [] }
@@ -30,8 +32,8 @@ defaultWorld = W { mem = defaultPtr, dataInput = [] }
 
 instance Show World where
   show (W (Ptr ls p rs) i) =
-    let left = unwords . map show . reverse $ take 3 ls
-        right = unwords . map show $ take 3 rs
+    let left = unwords . map show . reverse $ take 3 $ toList ls
+        right = unwords . map show $ take 3 $ toList rs
         brain = unwords ["[", left, "", show p, "", right, "]"]
     in unwords [ "World {"
                , brain
@@ -49,25 +51,27 @@ ptrIncr, ptrDecr :: Int -> BrainFuck ()
 ptrIncr 0 = return ()
 ptrIncr i = do
   Ptr ls p rs <- getMem
-  let (shifted, p':rs') = splitAt (i-1) rs
-      ls' = reverse shifted ++ (p : ls)
-  setMem $ Ptr ls' p' rs'
+  let (nearRight, right) = S.splitAt i rs
+      left S.:> center = S.viewr $ (ls S.|> p) S.>< nearRight
+  setMem $ Ptr left center right
 
 ptrDecr 0 = return ()
 ptrDecr i = do
   Ptr ls p rs <- getMem
-  let (shifted, p':ls') = splitAt (i-1) ls
-      rs' = reverse shifted ++ (p : rs)
-  setMem $ Ptr ls' p' rs'
+  let len = S.length ls
+      idx = len - i
+      (left, nearLeft) = S.splitAt idx ls
+      center S.:< right = S.viewl $ nearLeft S.>< (p S.<| rs)
+  setMem $ Ptr left center right
 
 scanIncr, scanDecr :: BrainFuck ()
 scanIncr = do
   Ptr _ p rs <- getMem
-  let idx = fromJust (elemIndex 0 (p:rs))
+  let Just idx = S.elemIndexL 0 (p S.<| rs)
   when (idx > 0) $ ptrIncr idx
 scanDecr = do
   Ptr ls p _ <- getMem
-  let idx = fromJust (elemIndex 0 (p:ls))
+  let Just idx = (S.elemIndexR 0 (ls S.|> p))
   when (idx > 0) $ ptrDecr idx
 
 valIncr, valDecr :: Word8 -> BrainFuck ()
@@ -158,7 +162,7 @@ runBrainFuck' parseResult stream =
     inputBytes = map (fromIntegral . ord) stream
     run = runWriter . flip runStateT world . runExceptT
     world = defaultWorld { dataInput = inputBytes }
-    emptyWorld = world { mem = Ptr [] 0 [] }
+    emptyWorld = world { mem = Ptr S.empty 0 S.empty }
 
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
 runBrainFuck source stream = render output

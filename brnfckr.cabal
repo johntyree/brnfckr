@@ -27,6 +27,7 @@ executable brnfckr
                      , mtl
                      , transformers
                      , hspec
+                     , containers
                      , deepseq
                      , QuickCheck
                      , brnfckr
@@ -46,6 +47,7 @@ library
     build-depends:     base
                      , transformers
                      , deepseq
+                     , containers
                      , mtl
                      , hspec
                      , QuickCheck
@@ -59,6 +61,7 @@ test-suite test
     build-depends:     base
                      , brnfckr
                      , deepseq
+                     , containers
                      , transformers
                      , mtl
                      , hspec
@@ -78,6 +81,7 @@ Benchmark parse-benchmarks
                      , criterion
                      , directory
                      , filepath
+                     , containers
                      , deepseq
                      , mtl
                      , transformers
