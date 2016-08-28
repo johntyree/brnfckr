@@ -11,14 +11,16 @@ import Control.DeepSeq
 import Data.Word
 
 
+type MemWord = Word8
+
 data BrainFuckError = UnbalancedBracket String
                     | ParseFailure String
                     | InsufficientInput
   deriving (Show, Eq, Generic, NFData)
 
-data Term = ValIncr !Word8
-          | ValDecr !Word8
-          | ValSet  !Word8
+data Term = ValIncr !MemWord
+          | ValDecr !MemWord
+          | ValSet  !MemWord
           | PtrIncr !Int
           | PtrDecr !Int
           | ScanIncr

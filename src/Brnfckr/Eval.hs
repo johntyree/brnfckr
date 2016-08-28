@@ -10,8 +10,8 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer.Strict
 import Control.Monad.Trans.Class
 import Data.Char
-import Data.Word
 import Data.Maybe
+import Data.STRef
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Mutable as UM
 import qualified Data.Vector.Generic as V
@@ -22,12 +22,13 @@ import Brnfckr.Parse
 
 
 type BrainFuck s a = ExceptT BrainFuckError (StateT (MWorld s) (WriterT Output (ST s))) a
-data MWorld s = MW { mMem :: !(MPtr s), mDataInput :: Input }
-data MPtr s = MPtr !Int (UM.MVector s Word8)
+data MWorld s = MW { mRam :: MRam s, mPc :: MPc s, mDataInput :: Input }
+type MRam s = STRef s (UM.MVector s MemWord)
+type MPc s = STRef s Int
 data World = W { mem :: !Ptr, dataInput :: Input }
-data Ptr = Ptr !Int (U.Vector Word8)
-type Input = [Word8]
-type Output = [Word8]
+data Ptr = Ptr !Int (U.Vector MemWord)
+type Input = [MemWord]
+type Output = [MemWord]
 
 
 memSize :: Int
@@ -49,71 +50,84 @@ instance Show World where
                ]
 
 
-getMem :: BrainFuck s (MPtr s)
-getMem = lift $ fmap mMem get
+{- getMem :: BrainFuck s (MPtr s) -}
+{- getMem = lift $ fmap mMem get -}
 
-setMem :: MPtr s -> BrainFuck s ()
-setMem p = lift $ modify $ \w -> w { mMem = p }
+{- setMem :: MPtr s -> BrainFuck s () -}
+{- setMem p = lift $ modify $ \w -> w { mMem = p } -}
 
 ptrIncr, ptrDecr :: Int -> BrainFuck s ()
 ptrIncr 0 = return ()
 ptrIncr i = do
-  MPtr pc ram <- getMem
-  setMem $ MPtr (pc + i) ram
+  pcRef <- lift $ fmap mPc get
+  lift . lift . lift $ modifySTRef' pcRef (+ i)
 ptrDecr i = ptrIncr (-i)
 
+getPc :: BrainFuck s Int
+getPc = do
+  pcRef <- lift $ fmap mPc get
+  lift . lift . lift $ readSTRef pcRef
+
+getRam :: BrainFuck s (UM.MVector s MemWord)
+getRam = do
+  ref <- lift $ fmap mRam get
+  lift . lift . lift $ readSTRef ref
 
 scanIncr, scanDecr :: BrainFuck s ()
 scanIncr = do
-  MPtr pc ram <- getMem
+  pc <- getPc
+  ram <- getRam
   prs <- U.unsafeFreeze $ VM.drop pc ram
   let idx = fromJust (V.elemIndex 0 prs)
   when (idx > 0) $ ptrIncr idx
 scanDecr = do
-  MPtr pc ram' <- getMem
+  pc <- getPc
+  ram' <- getRam
   ram <- U.unsafeFreeze ram'
   let pls = V.reverse . V.take (pc + 1) $ ram
   let idx = fromJust (V.elemIndex 0 pls)
   when (idx > 0) $ ptrDecr idx
 
-valIncr, valDecr :: Word8 -> BrainFuck s ()
+valIncr, valDecr :: MemWord -> BrainFuck s ()
 valIncr i = do
-  MPtr pc ram <- getMem
-  val <- ram `VM.read` pc
-  VM.write ram pc (val + i)
-  setMem $ MPtr pc ram
+  ram <- getRam
+  pc <- getPc
+  VM.modify ram (+ i) pc
 valDecr i = do
-  MPtr pc ram <- getMem
-  val <- ram `VM.read` pc
-  VM.write ram pc (val - i)
-  setMem $ MPtr pc ram
+  ram <- getRam
+  pc <- getPc
+  VM.modify ram (subtract i) pc
 
 valOutput :: BrainFuck s ()
 valOutput = do
-  MPtr pc ram <- getMem
+  ram <- getRam
+  pc <- getPc
   val <- ram `VM.read` pc
   lift . lift $ tell [val]
 
 valInput :: BrainFuck s ()
 valInput = do
-  MW { mMem = MPtr pc ram, mDataInput = input } <- lift get
+  mem@MW { mDataInput = input } <- lift get
+  ram <- getRam
+  pc <- getPc
   case input of
     (byte:rest) -> do
         VM.write ram pc byte
-        lift $ put MW { mMem = MPtr pc ram, mDataInput = rest }
+        lift $ put mem { mDataInput = rest }
     _ -> throwE InsufficientInput
 
-valSet :: Word8 -> BrainFuck s ()
+valSet :: MemWord -> BrainFuck s ()
 valSet byte = do
-  MPtr pc ram <- getMem
+  ram <- getRam
+  pc <- getPc
   VM.write ram pc byte
-  setMem $ MPtr pc ram
 
 runLoop :: [Term] -> BrainFuck s ()
 runLoop terms =
   let prog = eval terms
       go p = do
-        MPtr pc ram <- getMem
+        ram <- getRam
+        pc <- getPc
         byte <- ram `VM.read` pc
         when (byte /= 0) (p >> go p)
   in prog `seq` go prog
@@ -169,8 +183,9 @@ runBrainFuck' :: Either BrainFuckError [Term] -> String
 runBrainFuck' parseResult stream =
   case parseResult of
     Right ast -> runST $ do
-      v <- VM.replicate memSize 0
-      let mWorld = MW { mMem = MPtr 0 v, mDataInput = inputBytes }
+      pcRef <- newSTRef 0
+      ramRef <- VM.replicate memSize 0 >>= newSTRef
+      let mWorld = MW { mRam = ramRef, mPc = pcRef, mDataInput = inputBytes }
           run = runWriterT . flip runStateT mWorld . runExceptT
       ((result, mWorld), output) <- run $ (eval ast)
       world <- freezeWorld mWorld
@@ -179,11 +194,11 @@ runBrainFuck' parseResult stream =
   where
     inputBytes = map (fromIntegral . ord) stream
     emptyWorld = W { mem = Ptr 0 U.empty, dataInput = [] }
-    freezeMem (MPtr pc ram) = do
+    freezeWorld (MW { mRam = ramRef, mPc = pcRef, mDataInput = d }) = do
+      ram <- readSTRef ramRef
+      pc <- readSTRef pcRef
       r <- V.freeze ram
-      return $ Ptr pc r
-    freezeWorld (MW { mMem = mmem, mDataInput = d }) = do
-      mem <- freezeMem mmem
+      let mem = Ptr pc r
       return $ W { mem = mem, dataInput = d }
 
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
