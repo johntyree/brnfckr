@@ -7,7 +7,6 @@ import Control.Monad.Fix
 import Control.Monad.ST
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans.Writer.Strict
 import Control.Monad.Trans.Class
 import Data.Char
 import Data.Maybe
@@ -20,8 +19,8 @@ import qualified Data.Vector.Generic.Mutable as VM
 import Brnfckr.Parse
 
 
-type BrainFuck s a = ExceptT BrainFuckError (StateT (MWorld s) (WriterT Output (ST s))) a
-data MWorld s = MW { mRam :: MRam s, mPc :: {-# UNPACK #-} !Int, mDataInput :: Input }
+type BrainFuck s a = ExceptT BrainFuckError (StateT (MWorld s) (ST s)) a
+data MWorld s = MW { mRam :: MRam s, mPc :: {-# UNPACK #-} !Int, mDataInput :: Input, mDataOutput :: Output }
 type MRam s = UM.MVector s MemWord
 data World = W { mem :: !Ptr, dataInput :: Input }
 data Ptr = Ptr !Int (U.Vector MemWord)
@@ -84,7 +83,7 @@ valOutput :: BrainFuck s ()
 valOutput = do
   MW { mRam = ram, mPc = pc } <- lift get
   val <- ram `VM.read` pc
-  lift . lift $ tell [val]
+  lift $ modify $ \w@MW{ mDataOutput = o } -> w { mDataOutput = val:o }
 
 valInput :: BrainFuck s ()
 valInput = do
@@ -162,19 +161,19 @@ runBrainFuck' parseResult stream =
   case parseResult of
     Right ast -> runST $ do
       ram <- VM.replicate memSize 0
-      let mWorld = MW { mRam = ram, mPc = 0, mDataInput = inputBytes }
-          run = runWriterT . flip runStateT mWorld . runExceptT
-      ((result, mWorld), output) <- run $ (eval ast)
-      world <- freezeWorld mWorld
+      let mWorld = MW { mRam = ram, mPc = 0, mDataInput = inputBytes, mDataOutput = [] }
+          run = flip runStateT mWorld . runExceptT
+      (result, mWorld) <- run $ (eval ast)
+      (world, output) <- freezeWorld mWorld
       return ((result, world), output)
     Left msg -> ((Left msg, emptyWorld), [])
   where
     inputBytes = map (fromIntegral . ord) stream
     emptyWorld = W { mem = Ptr 0 U.empty, dataInput = [] }
-    freezeWorld (MW { mRam = ram, mPc = pc, mDataInput = d }) = do
+    freezeWorld (MW { mRam = ram, mPc = pc, mDataInput = d, mDataOutput = o }) = do
       r <- V.freeze ram
       let mem = Ptr pc r
-      return $ W { mem = mem, dataInput = d }
+      return $ (W { mem = mem, dataInput = d }, reverse o)
 
 runBrainFuck :: String -> String -> ((Either BrainFuckError (), World), String)
 runBrainFuck source stream = render output

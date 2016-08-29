@@ -29,8 +29,8 @@ programNames = do
   files <- getDirectoryContents dir
   return $ (dir, filter isNormalProgram files)
     where
-      isNormalProgram f = takeExtension f == ".bf" &&
-                          -- takeFileName f == "bottles.bf"
+      isNormalProgram f = takeExtension f == ".bf"
+                       && takeFileName f == "bottles.bf"
 
 readFile' :: FilePath -> IO String
 readFile' fn = do
