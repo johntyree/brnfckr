@@ -18,11 +18,9 @@ data BrainFuckError = UnbalancedBracket String
                     | InsufficientInput
   deriving (Show, Eq, Generic, NFData)
 
-data Term = ValIncr !MemWord
-          | ValDecr !MemWord
+data Term = ValIncr !Int
           | ValSet  !MemWord
           | PtrIncr !Int
-          | PtrDecr !Int
           | ScanIncr
           | ScanDecr
           | Loop [Term]
@@ -98,8 +96,8 @@ parseTerm = Parser char'
   where char' [] = Left $ ParseFailure "Unexpected EOF"
         char' (x:xs) = case x of
           '+' -> Right (xs, ValIncr 1)
-          '-' -> Right (xs, ValDecr 1)
-          '<' -> Right (xs, PtrDecr 1)
+          '-' -> Right (xs, ValIncr (-1))
+          '<' -> Right (xs, PtrIncr (-1))
           '>' -> Right (xs, PtrIncr 1)
           ',' -> Right (xs, ValInput)
           '.' -> Right (xs, ValOutput)
