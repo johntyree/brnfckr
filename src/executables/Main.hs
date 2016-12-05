@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Monad
 import System.Environment
 import System.Exit
 import System.Remote.Monitoring
@@ -10,7 +11,7 @@ import Brnfckr.Eval (runBrainFuck)
 
 main :: IO ()
 main = do
-  forkServer "localhost" 8000
+  void $ forkServer "localhost" 8000
   fname <- fmap head getArgs
   source <- readFile fname
   stream <- getContents
